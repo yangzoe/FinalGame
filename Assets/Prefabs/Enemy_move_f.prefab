@@ -106,6 +106,9 @@ MonoBehaviour:
   player: {fileID: 0}
   stopDistance: 0.3
   movementMultiplier: 5
+  attackCooldown: 1.5
+  attackDamage: 1
+  animator: {fileID: 7014269863277676543}
 --- !u!95 &7014269863277676543
 Animator:
   serializedVersion: 5

@@ -9,7 +9,7 @@ public class Enemy_nomove : Enemy
     private GameObject targetObject;
     private Transform target;
     [Tooltip("发射间隔（秒）")]
-    public float launchInterval = 2f;
+    public float launchInterval = 5f;
     [Tooltip("预计到达目标的时间（秒）")]
     // 修改点：新增命中延迟配置项
     
@@ -21,6 +21,8 @@ public class Enemy_nomove : Enemy
     [SerializeField] private Transform launchPoint;
     [Tooltip("世界坐标系下的偏移量")]
     public Vector2 spawnOffset = new Vector2(0.5f, 0);
+
+    public Animator animator;
 
     public override void OnSpawn()
     {
@@ -39,7 +41,7 @@ public class Enemy_nomove : Enemy
         }
 
         // 修改点2：确保执行顺序
-        if (launchPoint == null) launchPoint = transform;
+        if (launchPoint == null) launchPoint = transform;       
         OnSpawn();
     }
 
@@ -50,10 +52,13 @@ public class Enemy_nomove : Enemy
         while (targetObject != null)
         {
             target = targetObject.transform;
+            animator.SetBool("Is_attack", false);
             yield return new WaitForSeconds(launchInterval);
 
             if (target != null)
             {
+                animator.SetBool("Is_attack", true);
+                yield return new WaitForSeconds(0.7f);
                 LaunchProjectile(target.position);
             }
             else

@@ -107,9 +107,12 @@ MonoBehaviour:
   wanderStrength: 1.2
   patternChangeInterval: 0.8
   stopDistance: 0.2
+  moveDuration: 2
+  stopDuration: 2
   speedVariation: 0.3
   noiseScale: 2
   movementMultiplier: 2
+  animator: {fileID: 7855690992454112433}
 --- !u!95 &7855690992454112433
 Animator:
   serializedVersion: 5

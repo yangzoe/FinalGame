@@ -1,85 +1,111 @@
 using UnityEngine;
 using System.Collections.Generic;
 using System.Collections;
+using System.Linq;
 
 public class SpawnNomove : MonoBehaviour
 {
     [Header("生成设置")]
     public GameObject spawnPrefab;       // 需要生成的预制体
-    public Transform[] spawnPoints;     // 10个生成点（需在Inspector中设置）
-    public float initialDelay = 3f;      // 开始生成前的初始延迟
-    public int maxSpawnCount = 5;       // 最大同时存在数量
+    public Transform[] spawnPoints;     // 生成点数组（5个）
+    public Transform[] leftStartPoints;  // 左侧起始点
+    public Transform[] rightStartPoints; // 右侧起始点
+    public float initialDelay = 3f;      // 初始延迟
+    public int maxSpawnCount = 3;       // 最大同时存在数量
+    public float moveSpeed = 0.5f;        // 移动速度
 
-    private List<GameObject> activeObjects = new List<GameObject>(); // 当前存在的对象
-    private bool isSpawning = true;     // 生成控制开关
+    private HashSet<int> usedSpawnIndices = new HashSet<int>(); // 已被占用的生成点索引
+    private Dictionary<GameObject, int> objToSpawnIndex = new Dictionary<GameObject, int>(); // 对象对应的生成点索引
+    private bool isSpawning = true;
 
     private void Start()
     {
-        // 验证生成点数量
-        if (spawnPoints.Length != 5)
-        {
-            Debug.LogWarning("需要设置5个生成点！当前数量：" + spawnPoints.Length);
-        }
-
+        ValidatePoints();
         StartCoroutine(SpawnRoutine());
+    }
+
+    private void ValidatePoints()
+    {
+        if (spawnPoints.Length != 5)
+            Debug.LogWarning("需要5个生成点！当前数量：" + spawnPoints.Length);
+
+        if (leftStartPoints.Length == 0 || rightStartPoints.Length == 0)
+            Debug.LogWarning("需要至少一个左侧和右侧起始点！");
     }
 
     private IEnumerator SpawnRoutine()
     {
-        yield return new WaitForSeconds(initialDelay); // 初始延迟
+        yield return new WaitForSeconds(initialDelay);
 
         while (isSpawning)
         {
-            if (activeObjects.Count < maxSpawnCount)
+            if (objToSpawnIndex.Count < maxSpawnCount)
             {
-                SpawnObject();
+                TrySpawnObject();
             }
-
-            // 随机间隔（5-10秒）
-            float waitTime = Random.Range(5f, 10f);
-            yield return new WaitForSeconds(waitTime);
+            yield return new WaitForSeconds(Random.Range(5f, 10f));
         }
     }
 
-    private void SpawnObject()
+    private void TrySpawnObject()
     {
-        if (spawnPrefab == null || spawnPoints.Length == 0) return;
+        // 获取可用生成点索引
+        var availableIndices = Enumerable.Range(0, spawnPoints.Length)
+            .Where(i => !usedSpawnIndices.Contains(i)).ToList();
 
-        // 随机选择生成点
-        int index = Random.Range(0, spawnPoints.Length);
-        Transform spawnPoint = spawnPoints[index];
+        if (availableIndices.Count == 0) return;
 
-        // 实例化对象
-        if (spawnPoint != null)
-        {
-            if(spawnPoint.transform.position.x < 0)
-            {
-                spawnPoint.transform.eulerAngles = new Vector3(spawnPoint.transform.eulerAngles.x,180,spawnPoint.transform.eulerAngles.z);
-            }
-        }
-        GameObject newObj = Instantiate(spawnPrefab, spawnPoint.position, spawnPoint.rotation);
+        int spawnIndex = availableIndices[Random.Range(0, availableIndices.Count)];
+        Transform spawnPoint = spawnPoints[spawnIndex];
+
+        // 选择起始点
+        Transform[] startPoints = spawnPoint.position.x < 0 ? leftStartPoints : rightStartPoints;
+        Transform startPoint = startPoints[Random.Range(0, startPoints.Length)];
+
         
-        activeObjects.Add(newObj);
+        GameObject obj = Instantiate(spawnPrefab, startPoint.position, 
+            startPoint.position.x < 0?  Quaternion.Euler(startPoint.rotation.eulerAngles + new Vector3(0, 180f, 0))
+        : startPoint.rotation);
+        StartCoroutine(MoveToTarget(obj, spawnPoint.position, spawnIndex));
 
-        // 添加销毁监听
-        StartCoroutine(TrackObjectLifecycle(newObj));
+        usedSpawnIndices.Add(spawnIndex);
+        objToSpawnIndex.Add(obj, spawnIndex);
     }
 
-    private IEnumerator TrackObjectLifecycle(GameObject obj)
+    private IEnumerator MoveToTarget(GameObject obj, Vector3 target, int spawnIndex)
     {
-        // 等待对象被销毁
-        while (obj != null)
+        while (obj != null && Vector3.Distance(obj.transform.position, target) > 0.1f)
         {
+            obj.transform.position = Vector3.MoveTowards(
+                obj.transform.position,
+                target,
+                moveSpeed * Time.deltaTime
+            );
             yield return null;
         }
-
-        // 从列表中移除
-        activeObjects.Remove(obj);
+        obj.GetComponent<Enemy_nomove>().animator.SetBool("Is_des", true);
+        
+        // 对象销毁时清理
+        if (obj == null)
+        {
+            usedSpawnIndices.Remove(spawnIndex);
+            objToSpawnIndex.Remove(obj);
+        }
     }
 
-    // 停止生成（可选）
     public void StopSpawning()
     {
         isSpawning = false;
+    }
+
+    // 清理销毁的对象
+    private void Update()
+    {
+        var nullEntries = objToSpawnIndex.Where(pair => pair.Key == null).ToList();
+        foreach (var entry in nullEntries)
+        {
+            usedSpawnIndices.Remove(entry.Value);
+            objToSpawnIndex.Remove(entry.Key);
+        }
     }
 }

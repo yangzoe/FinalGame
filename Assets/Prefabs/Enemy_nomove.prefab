@@ -124,9 +124,9 @@ MonoBehaviour:
   speed: 0
   prefabType: {fileID: 0}
   projectilePrefab: {fileID: 2492186721830422340, guid: bcde04f55b85fae41a24dbc14aba5f95, type: 3}
-  target: {fileID: 0}
-  launchInterval: 2
+  launchInterval: 5
   hitDestroyDelay: 0
   flightTime: 1
   launchPoint: {fileID: 7772683521771363767}
   spawnOffset: {x: 0, y: 0}
+  animator: {fileID: 3122944926547035749}

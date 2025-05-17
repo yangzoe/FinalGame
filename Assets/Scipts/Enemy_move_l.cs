@@ -1,4 +1,5 @@
 using UnityEngine;
+using System.Collections;
 
 public class Enemy_move_l : Enemy
 {
@@ -8,18 +9,36 @@ public class Enemy_move_l : Enemy
     [Header("移动参数")]
     [Range(0.1f, 1.5f)] public float wanderStrength = 0.6f;
     [Range(0.1f, 2f)] public float patternChangeInterval = 0.8f;
-    [Range(0.2f, 3f)] public float stopDistance = 1f;  // 停止距离
+    [Range(0.2f, 3f)] public float stopDistance = 1f;
+
+    [Header("走停模式")]
+    [Range(1f, 5f)] public float moveDuration = 2f;
+    [Range(1f, 5f)] public float stopDuration = 1f;
+
+    [Header("攻击设置")]
+    [Range(0.5f, 3f)] public float attackCooldown = 1.5f;
+    [Range(1, 5)] public int attackDamage = 1;
 
     [Header("高级设置")]
     [Range(0f, 1f)] public float speedVariation = 0.5f;
     [Range(0.1f, 3f)] public float noiseScale = 1.5f;
     [Range(1f, 5f)] public float movementMultiplier = 2f;
 
-    // 状态变量
+    public Animator animator;
+
+    // 移动相关变量
     private float _noiseOffset;
     private float _patternTimer;
     private Vector2 _currentVelocity;
     private float _baseAngleScale = 0.4f;
+
+    // 状态控制变量
+    private bool _isMoving = true;
+    private float _modeTimer;
+    private bool _isAttacking;
+    private float _lastAttackTime;
+    private Coroutine _attackRoutine;
+    private bool _shouldResumeMove;
 
     private void Awake()
     {
@@ -45,32 +64,69 @@ public class Enemy_move_l : Enemy
     {
         hp = 5;
         damage = 1;
-        speed = 10.0f;
+        speed = 3.0f;
 
         _noiseOffset = Random.Range(0f, 100f);
         _patternTimer = Random.Range(0f, patternChangeInterval);
         _currentVelocity = Vector2.zero;
+
+        // 初始化状态
+        _modeTimer = 0f;
+        _isMoving = true;
+        _isAttacking = false;
+        _lastAttackTime = Time.time - attackCooldown;
+        _shouldResumeMove = false;
     }
 
     void Update()
     {
         if (player == null) return;
+
         CheckHp();
+        CheckAttackCondition();
+        UpdateMovementMode();
+        HandleMovement();
+        RotateTowardPlayer();
+
+        // 实时更新动画参数
+        animator.SetBool("IsMoving", IsMoving);
+    }
+
+    #region 移动控制系统
+    void UpdateMovementMode()
+    {
+        if (_isAttacking) return;
+
+        _modeTimer += Time.deltaTime;
+        float currentDuration = _isMoving ? moveDuration : stopDuration;
+
+        if (_modeTimer >= currentDuration || _shouldResumeMove)
+        {
+            _isMoving = !_isMoving;
+            _modeTimer = 0f;
+            _shouldResumeMove = false;
+            _currentVelocity = Vector2.zero;
+        }
+    }
+
+    void HandleMovement()
+    {
+        if (!IsMoving)
+        {
+            _currentVelocity = Vector2.zero;
+            return;
+        }
+
         Vector2 movement = CalculateMonsterMovement(
             transform.position,
             player.position,
             Time.deltaTime
         );
-        RotateTowardPlayer();
         ApplyMovement(movement);
     }
 
     Vector2 CalculateMonsterMovement(Vector2 currentPosition, Vector2 playerPosition, float deltaTime)
     {
-        // 距离判断
-        float distance = Vector2.Distance(currentPosition, playerPosition);
-        if (distance <= stopDistance) return Vector2.zero;
-
         _patternTimer += deltaTime;
 
         if (_patternTimer >= patternChangeInterval)
@@ -106,29 +162,99 @@ public class Enemy_move_l : Enemy
             ref _currentVelocity,
             0.05f
         );
+    }
+    #endregion
 
-        // ====== 怪物旋转代码开始 ======
-        /*
-        if (movement.magnitude > 0.01f)
+    #region 攻击系统
+    void CheckAttackCondition()
+    {
+        // 新增冷却期锁定
+        if (_isAttacking || Time.time < _lastAttackTime + attackCooldown * 0.5f) return;
+
+        // 动态检测范围（攻击后逐渐缩小）
+        float dynamicRange = Mathf.Lerp(stopDistance * 1.5f, stopDistance,
+            (Time.time - _lastAttackTime) / attackCooldown);
+
+        if (Vector2.Distance(transform.position, player.position) <= dynamicRange)
         {
-            float targetAngle = Mathf.Atan2(movement.y, movement.x) * Mathf.Rad2Deg - 90f;
-            transform.rotation = Quaternion.Euler(0, 0, targetAngle);
+            if (_attackRoutine != null) StopCoroutine(_attackRoutine);
+            _attackRoutine = StartCoroutine(AttackProcess());
         }
-        */
-        // ====== 怪物旋转代码结束 ======
     }
 
+    // 修改后的攻击协程部分
+    IEnumerator AttackProcess()
+    {
+        if (_isAttacking) yield break;
+        _isAttacking = true;
+
+        // 强制重置动画状态，确保每次从头播放
+        animator.Play("move_l_attack", 0, 0f);
+        animator.SetTrigger("Attack");
+        animator.SetBool("IsAttacking", true);
+
+        // 锁定移动系统
+        bool wasMoving = _isMoving;
+        _isMoving = false;
+        _currentVelocity = Vector2.zero;
+
+        // 更可靠的动画启动检测
+        yield return new WaitUntil(() =>
+            animator.GetCurrentAnimatorStateInfo(0).IsName("move_l_attack"));
+
+        // 获取动画信息
+        AnimatorStateInfo attackState = animator.GetCurrentAnimatorStateInfo(0);
+        float attackLength = attackState.length;
+
+        // 使用精确时间检测（基于动画实际时长）
+        float timer = 0f;
+        float damageTime = attackLength * 0.35f;
+        bool damageApplied = false;
+
+        while (timer < attackLength)
+        {
+            timer += Time.deltaTime;
+
+            // 在指定时间点应用伤害
+            if (!damageApplied && timer >= damageTime)
+            {
+                TryApplyDamage();
+                damageApplied = true;
+            }
+            yield return null;
+        }
+
+        // 状态恢复
+        _isAttacking = false;
+        _isMoving = wasMoving;
+        _shouldResumeMove = true;
+        _lastAttackTime = Time.time;
+
+        animator.SetBool("IsAttacking", false);
+        animator.ResetTrigger("Attack");
+    }
+
+    // 修改后的TryApplyDamage方法
+    void TryApplyDamage()
+    {
+        // 根据攻击时的初始位置判断（避免玩家移动后失效）
+        float currentStopDistance = stopDistance * 1.2f;
+        if (Vector2.Distance(transform.position, player.position) <= currentStopDistance)
+        {
+            // 实际伤害逻辑
+            Debug.Log("成功造成伤害: " + attackDamage);
+            // 添加你的伤害应用逻辑（如调用玩家的受伤方法）
+        }
+    }
+    #endregion
+
+    #region 其他方法
     void RotateTowardPlayer()
     {
         if (player == null) return;
-        if( transform.position.x < player.position.x)
-        {
-            transform.rotation = Quaternion.Euler(0, 180, 0);
-        }
-        else
-        {
-            transform.rotation = Quaternion.Euler(0, 0, 0);
-        }
+
+        float rotationY = transform.position.x < player.position.x ? 180f : 0f;
+        transform.rotation = Quaternion.Euler(0, rotationY, 0);
     }
 
     void CheckHp()
@@ -148,4 +274,24 @@ public class Enemy_move_l : Enemy
     {
         TakeDamage(5);
     }
+
+    void LateUpdate()
+    {
+        // 强制同步攻击状态
+        animator.SetBool("IsAttacking", _isAttacking);
+
+        // 防止动画卡在攻击状态
+        if (!_isAttacking && animator.GetCurrentAnimatorStateInfo(0).IsName("move_l_attack"))
+        {
+            animator.Play("move_l");
+        }
+    }
+
+    public bool IsMoving
+    {
+        get => _isMoving &&
+              !_isAttacking &&
+              Vector2.Distance(transform.position, player.position) > stopDistance * 0.8f;
+    }
+    #endregion
 }
