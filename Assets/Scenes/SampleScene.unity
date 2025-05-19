@@ -816,7 +816,7 @@ MonoBehaviour:
     spawnWeight: 0.5
   - enemyPrefab: {fileID: 8622267537337166209, guid: f17606ca3aee8504db38ca45c0233fb3, type: 3}
     spawnWeight: 0.5
-  totalSpawnTime: 10
+  totalSpawnTime: 60
   spawnInterval: 2
   startDelay: 1
   spawnAreaSize: {x: 10.66, y: 8.7}
@@ -830,7 +830,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1076047256}
-  m_Enabled: 0
+  m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: cd32f5ab0207eb245ac16c79466b8f13, type: 3}
   m_Name: 
